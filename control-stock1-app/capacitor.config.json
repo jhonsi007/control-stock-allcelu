@@ -1,6 +1,0 @@
-{
-  "appId": "co.controlstock.app",
-  "appName": "Control de Stock",
-  "webDir": "www",
-  "server": { "androidScheme": "https" }
-}
