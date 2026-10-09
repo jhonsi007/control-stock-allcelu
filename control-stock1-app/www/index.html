@@ -1,0 +1,1145 @@
+<!doctype html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0F6B5C">
+<link rel="manifest" href="manifest.webmanifest">
+<script src="vendor/firebase-app-compat.js"></script>
+<script src="vendor/firebase-auth-compat.js"></script>
+<script src="vendor/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<link rel="icon" href="icon-192.png">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Control de Stock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script src="vendor/jspdf.umd.min.js"></script>
+<style>
+/* Layout: una columna de 600px. Tres pestañas abajo (Movimiento, Inventario, Faltantes). Movimiento imita el formulario dibujado: producto, cantidad, ingresa/retira, aceptar. Inventario es una tabla producto, cantidad, mínimo, precio. */
+:root{
+  --bg:#EDF0EE;
+  --surface:#FAFBFA;
+  --ink:#14231F;
+  --muted:#52625C;
+  --line:#CFD8D4;
+  --accent:#0F6B5C;
+  --accent-ink:#FFFFFF;
+  --tag:#F2C230;
+  --tag-ink:#1B1600;
+  --in:#16794C;
+  --in-ink:#FFFFFF;
+  --out:#B3261E;
+  --out-ink:#FFFFFF;
+  --warn-bg:#FBE4E1;
+  --warn-ink:#8C1D18;
+  --scrim:rgba(10,20,17,.5);
+  --f-display:'Barlow Condensed','Arial Narrow',system-ui,sans-serif;
+  --f-body:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --f-mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E1613;--surface:#16231F;--ink:#E5EEEB;--muted:#93A59E;--line:#2A3B36;
+    --accent:#4FC3AA;--accent-ink:#06221C;--tag:#E8B923;--tag-ink:#1B1600;
+    --in:#4CC38A;--in-ink:#06221C;--out:#FF7B70;--out-ink:#2B0805;
+    --warn-bg:#3A1C1A;--warn-ink:#FFB3AB;--scrim:rgba(0,0,0,.65);color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E1613;--surface:#16231F;--ink:#E5EEEB;--muted:#93A59E;--line:#2A3B36;
+  --accent:#4FC3AA;--accent-ink:#06221C;--tag:#E8B923;--tag-ink:#1B1600;
+  --in:#4CC38A;--in-ink:#06221C;--out:#FF7B70;--out-ink:#2B0805;
+  --warn-bg:#3A1C1A;--warn-ink:#FFB3AB;--scrim:rgba(0,0,0,.65);color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15px/1.45 var(--f-body);-webkit-text-size-adjust:100%}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+[hidden]{display:none!important}
+.app{max-width:600px;margin:0 auto;padding-inline:16px;padding-block:0 112px}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);padding-block:14px 10px}
+h1{font:600 28px/1 var(--f-display);letter-spacing:.05em;text-transform:uppercase;margin:0;text-wrap:balance}
+.summary{margin:6px 0 0;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.summary b{color:var(--ink);font-weight:600}
+.pill{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:1px 7px;border-radius:99px;background:var(--warn-bg);color:var(--warn-ink);white-space:nowrap}
+.pill.ex{background:transparent;border:1px solid var(--line);color:var(--muted)}
+.label{display:block;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.field{display:grid;gap:0}
+.input{width:100%;min-height:52px;padding:12px 14px;font-size:17px;background:var(--surface);border:2px solid var(--line);border-radius:10px}
+.input:focus{border-color:var(--accent);outline:none}
+.input:focus-visible{outline:3px solid color-mix(in srgb,var(--accent) 35%,transparent);outline-offset:0}
+.btn{min-height:48px;padding:10px 18px;border:2px solid transparent;border-radius:8px;font-weight:600;font-size:16px;display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.primary{background:var(--accent);color:var(--accent-ink)}
+.btn.ghost{background:transparent;border-color:var(--line);color:var(--ink)}
+.btn.danger{background:transparent;border-color:var(--out);color:var(--out)}
+.btn.sm{min-height:40px;padding:6px 14px;font-size:14px}
+.btn.block{width:100%;min-height:60px;font-size:19px}
+.tag{display:inline-block;background:var(--tag);color:var(--tag-ink);font:600 15px/1.2 var(--f-display);letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:3px;max-width:100%;overflow-wrap:anywhere}
+.tag.big{font-size:30px;padding:3px 12px;border-radius:4px}
+.panel{display:grid;gap:18px;padding-top:8px}
+/* movimiento */
+.sugg-list{display:grid;border:2px solid var(--line);border-radius:10px;background:var(--surface);overflow:hidden;margin-top:-6px}
+.sugg{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:12px 14px;min-height:52px}
+.sugg:last-child{border-bottom:0}
+.sugg .nm{font-weight:600;overflow-wrap:anywhere}
+.sugg .q{font:600 22px/1 var(--f-display);font-variant-numeric:tabular-nums;color:var(--muted)}
+.sugg-empty{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border:2px dashed var(--line);border-radius:10px;color:var(--muted);margin-top:-6px}
+.selected{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;align-items:start;padding:14px;background:var(--surface);border:2px solid var(--accent);border-radius:10px;margin-top:-6px}
+.selected .nm{font-weight:600;font-size:16px;overflow-wrap:anywhere}
+.selected .meta{grid-column:1;color:var(--muted);font-size:13px;display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;font-variant-numeric:tabular-nums}
+.selected .stock{grid-column:2;grid-row:1 / span 2;text-align:right}
+.selected .stock b{display:block;font:700 48px/.9 var(--f-display);font-variant-numeric:tabular-nums}
+.selected .stock b.low{color:var(--out)}
+.selected .stock small{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.linkbtn{background:none;border:0;padding:0;color:var(--accent);font-weight:600;font-size:13px;text-decoration:underline;min-height:32px}
+.stepper{display:grid;grid-template-columns:60px minmax(0,1fr) 60px;gap:8px}
+.stepper button{min-height:56px;font-size:28px;background:var(--surface);border:2px solid var(--line);border-radius:8px}
+.stepper input{min-height:56px;width:100%;text-align:center;font:600 30px/1 var(--f-display);font-variant-numeric:tabular-nums;background:var(--surface);border:2px solid var(--line);border-radius:8px}
+.stepper input:focus{border-color:var(--accent);outline:none}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.seg button{min-height:60px;border:2px solid var(--line);border-radius:10px;background:var(--surface);font:600 22px/1 var(--f-display);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.seg button[aria-pressed="true"]{border-color:transparent}
+#seg-in[aria-pressed="true"]{background:var(--in);color:var(--in-ink)}
+#seg-out[aria-pressed="true"]{background:var(--out);color:var(--out-ink)}
+.check{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--muted);min-height:32px}
+.check input{width:20px;height:20px;accent-color:var(--accent)}
+.err{margin:0;padding:10px 12px;border-radius:8px;background:var(--warn-bg);color:var(--warn-ink);font-weight:500}
+.result{display:grid;gap:10px;padding:14px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
+.result h3{margin:0;font-size:16px;overflow-wrap:anywhere}
+.result .big{font:600 26px/1.1 var(--f-display);font-variant-numeric:tabular-nums}
+.result .in{color:var(--in)}
+.result .out{color:var(--out)}
+.mini{list-style:none;margin:0;padding:0;font-size:14px}
+.mini li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:6px 0;border-bottom:1px solid var(--line)}
+.mini li:last-child{border-bottom:0}
+.mini .nm{overflow-wrap:anywhere}
+.mini .f{font-weight:600;color:var(--out);font-variant-numeric:tabular-nums;white-space:nowrap}
+.sub{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0}
+/* inventario */
+.bar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}
+.banner{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px 12px;margin:0;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:13px;color:var(--muted)}
+.tbl-head,.tr{display:grid;grid-template-columns:minmax(0,1fr) 44px 44px 88px;gap:8px;align-items:center}
+.tbl-head{padding:8px 0;border-bottom:2px solid var(--ink);font:600 12px/1 var(--f-display);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.tbl-head span:nth-child(n+2){text-align:right}
+.tr{width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:10px 0;min-height:58px}
+.tr:active{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.tr .nm{font-weight:600;font-size:14px;overflow-wrap:anywhere;display:grid;gap:4px;justify-items:start}
+.tr .n{text-align:right;font:400 13px/1.2 var(--f-mono);font-variant-numeric:tabular-nums}
+.tr .n.q{font:600 24px/1 var(--f-display)}
+.tr.is-low .n.q{color:var(--out)}
+.empty{padding:24px 0;color:var(--muted);display:grid;gap:14px;justify-items:start}
+.empty p{margin:0;max-width:46ch}
+.empty strong{color:var(--ink)}
+/* cuadrícula */
+.hint{margin:0;font-size:13px;color:var(--muted)}
+.gridwrap{overflow:auto;max-height:calc(100vh - 340px);max-height:calc(100svh - 340px);min-height:280px;border:1px solid var(--line);border-radius:8px;background:var(--surface);-webkit-overflow-scrolling:touch}
+.grid{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%}
+.grid th,.grid td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:0;background:var(--surface);text-align:left}
+.grid th{position:sticky;top:0;z-index:3;font:600 13px/1 var(--f-display);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);padding:12px 10px;background:var(--bg);border-bottom:2px solid var(--ink);white-space:nowrap}
+.grid th.num{text-align:right}
+.grid .idx{position:sticky;left:0;z-index:2;width:44px;min-width:44px;padding:0;background:var(--bg);text-align:center}
+.grid th.idx{z-index:5}
+.grid .c-name{position:sticky;left:44px;z-index:2;width:230px;min-width:230px;box-shadow:2px 0 0 var(--line)}
+.grid th.c-name{z-index:5}
+.grid td:not(.idx):not(.c-name){min-width:130px}
+.grid th.num,.grid td.num{min-width:88px!important;width:88px}
+.grid td input{display:block;width:100%;height:48px;border:0;background:transparent;padding:0 10px;font-size:15px;border-radius:0;text-overflow:ellipsis}
+.grid td.num input{text-align:right;font-family:var(--f-mono);font-size:14px}
+.grid td input:focus{outline:2px solid var(--accent);outline-offset:-2px;background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
+.grid td.low input{color:var(--out);font-weight:600}
+.idxbtn{width:44px;height:48px;background:none;border:0;color:var(--muted);font:500 12px var(--f-mono)}
+.idxbtn:disabled{opacity:.55;cursor:default}
+.colbtn{background:none;border:0;padding:0;font:inherit;letter-spacing:inherit;text-transform:inherit;color:var(--accent);text-decoration:underline;white-space:nowrap;min-height:24px}
+/* faltantes */
+.f-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
+.f-head h2{margin:0;font:600 24px/1 var(--f-display);letter-spacing:.04em;text-transform:uppercase}
+.fr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 14px;align-items:center;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:12px 0;min-height:60px}
+.fr .nm{font-weight:600;overflow-wrap:anywhere}
+.fr .d{grid-column:1;color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums}
+.fr .need{grid-column:2;grid-row:1 / span 2;text-align:right;font:700 30px/1 var(--f-display);color:var(--out);font-variant-numeric:tabular-nums}
+.fr .need small{display:block;font:500 11px/1.2 var(--f-body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+/* navegación, hoja, aviso */
+.nav{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+.nav-in{max-width:600px;margin:0 auto;display:flex}
+.nav button{flex:1;min-height:58px;background:none;border:0;border-top:3px solid transparent;font:600 18px/1 var(--f-display);letter-spacing:.07em;text-transform:uppercase;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;gap:8px}
+.nav button[aria-selected="true"]{color:var(--accent);border-top-color:var(--accent)}
+.badge{font:600 12px/1 var(--f-body);background:var(--out);color:var(--out-ink);min-width:20px;padding:3px 6px;border-radius:99px;text-align:center}
+.overlay{position:fixed;inset:0;z-index:20}
+.scrim{position:absolute;inset:0;background:var(--scrim)}
+.sheet{position:absolute;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:600px;max-height:92%;overflow-y:auto;background:var(--surface);border-radius:16px 16px 0 0;padding:16px 16px calc(20px + env(safe-area-inset-bottom,0px));box-shadow:0 -8px 32px rgba(0,0,0,.25)}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translate(-50%,24px);opacity:0}}}
+.sheet-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+.sheet-head h2{margin:0;font-size:20px;line-height:1.25;overflow-wrap:anywhere;text-wrap:balance}
+.close{flex:none;width:44px;height:44px;border-radius:50%;background:transparent;border:2px solid var(--line);font-size:22px;line-height:1}
+.form{display:grid;gap:14px}
+.form label{display:grid;gap:4px;font-weight:500}
+.form input{min-height:48px;padding:10px 12px;background:var(--bg);border:2px solid var(--line);border-radius:8px;font-size:16px;width:100%}
+.form input:focus{border-color:var(--accent);outline:none}
+.form .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form .hint{font-weight:400;font-size:12px;color:var(--muted)}
+.actions{display:flex;flex-wrap:wrap;gap:10px}
+.hist{list-style:none;margin:0;padding:0;font-size:13px;font-variant-numeric:tabular-nums}
+.hist li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:12px;padding:7px 0;border-bottom:1px solid var(--line);color:var(--muted)}
+.hist .d{font-weight:600}
+.hist .d.p{color:var(--in)}
+.hist .d.n{color:var(--out)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(76px + env(safe-area-inset-bottom,0px));z-index:30;max-width:calc(100% - 32px);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:8px;font-weight:500;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.3)}
+</style>
+
+<style>
+.backup{margin-top:4px;border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--surface)}
+.backup summary{font-weight:600;cursor:pointer;min-height:32px;display:flex;align-items:center}
+.backup .actions{margin:10px 0}
+.login{position:fixed;inset:0;z-index:40;background:var(--bg);display:grid;align-items:center;justify-items:center;padding:24px 16px;overflow:auto}
+.login-card{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:20px}
+.login-card h2{margin:0;font:600 28px/1 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
+.login-card .hint{margin:0}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <h1>Control de Stock</h1>
+    <p class="summary" id="summary" aria-live="polite">Cargando inventario…</p>
+  </header>
+
+  <main>
+    <!-- Pantalla 2: movimiento -->
+    <section class="panel" id="panel-movimiento" aria-label="Movimiento">
+      <div class="field">
+        <label class="label" for="mv-name">Nombre del producto</label>
+        <input class="input" id="mv-name" type="search" autocomplete="off" autocapitalize="none" enterkeyhint="search" placeholder="Escribe para buscar">
+      </div>
+      <div id="mv-sugg"></div>
+      <div id="mv-card"></div>
+      <div class="field">
+        <span class="label">Cantidad</span>
+        <div class="stepper">
+          <button type="button" id="mv-minus" aria-label="Restar uno">−</button>
+          <input id="mv-qty" type="number" inputmode="numeric" min="1" step="1" value="1" aria-label="Cantidad a mover">
+          <button type="button" id="mv-plus" aria-label="Sumar uno">+</button>
+        </div>
+      </div>
+      <div class="seg" role="group" aria-label="Tipo de movimiento">
+        <button type="button" id="seg-in" aria-pressed="true">Ingresa</button>
+        <button type="button" id="seg-out" aria-pressed="false">Retira</button>
+      </div>
+      <label class="check" id="pdf-row" hidden><input type="checkbox" id="mv-pdf" checked> Descargar PDF al aceptar</label>
+      <p class="err" id="mv-err" role="alert" hidden></p>
+      <button class="btn primary block" id="mv-ok" type="button">Aceptar</button>
+      <div id="mv-result" aria-live="polite"></div>
+    </section>
+
+    <!-- Pantalla 1: inventario -->
+    <section class="panel" id="panel-inventario" aria-label="Inventario" hidden>
+      <div class="bar">
+        <input class="input" id="q" type="search" autocomplete="off" autocapitalize="none" placeholder="Buscar en el inventario" aria-label="Buscar en el inventario">
+        <button class="btn ghost" id="btn-col" type="button">+ Columna</button>
+      </div>
+      <p class="hint">Toca una casilla y escribe. Siempre quedan filas vacías abajo para seguir agregando. Usa Enter para bajar.</p>
+      <div id="inv-note"></div>
+      <div class="gridwrap" id="gridwrap"><table class="grid" id="grid"></table></div>
+      <details class="backup">
+        <summary>Copia de seguridad e importar</summary>
+        <div class="actions">
+          <button class="btn ghost sm" id="bk-json" type="button">Guardar copia (.json)</button>
+          <button class="btn ghost sm" id="bk-csv" type="button">Exportar a Excel (.csv)</button>
+          <button class="btn ghost sm" id="bk-import" type="button">Importar (.json o .csv)</button>
+          <button class="btn ghost sm" id="bk-out" type="button" hidden>Cerrar sesión</button>
+          <input type="file" id="bk-file" accept=".json,.csv,text/csv,application/json" hidden>
+        </div>
+        <p class="hint">Al importar un .csv se agregan productos nuevos (si lo importas dos veces, se duplican). Un .json de copia reemplaza los productos que ya existen.</p>
+      </details>
+    </section>
+
+    <section class="panel" id="panel-faltantes" aria-label="Faltantes" hidden></section>
+  </main>
+
+  <p class="banner" id="note" hidden style="margin-top:18px">Tus datos se guardan en este dispositivo. Usa «Copia de seguridad» (abajo, en Inventario) para guardarlos o pasarlos a otro dispositivo.</p>
+</div>
+
+<nav class="nav" aria-label="Secciones">
+  <div class="nav-in" role="tablist">
+    <button type="button" role="tab" id="tab-movimiento" aria-selected="true" aria-controls="panel-movimiento">Movimiento</button>
+    <button type="button" role="tab" id="tab-inventario" aria-selected="false" aria-controls="panel-inventario">Inventario</button>
+    <button type="button" role="tab" id="tab-faltantes" aria-selected="false" aria-controls="panel-faltantes">Faltantes</button>
+  </div>
+</nav>
+
+<div class="overlay" id="overlay" hidden>
+  <div class="scrim" id="scrim"></div>
+  <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <div class="sheet-head">
+      <h2 id="sheet-title"></h2>
+      <button class="close" id="sheet-close" type="button" aria-label="Cerrar">×</button>
+    </div>
+    <div id="sheet-body"></div>
+  </section>
+</div>
+<div class="toast" id="toast" role="status" hidden></div>
+<div class="login" id="login" hidden>
+  <form class="login-card form" id="login-form" novalidate>
+    <h2>Control de Stock</h2>
+    <p class="hint">Entra con tu correo para ver el mismo inventario en el celular y en la web.</p>
+    <label>Correo<input id="lg-mail" type="email" autocomplete="username" inputmode="email" autocapitalize="none"></label>
+    <label>Contraseña<input id="lg-pass" type="password" autocomplete="current-password"></label>
+    <p class="err" id="lg-err" role="alert" hidden></p>
+    <button class="btn primary" id="lg-in" type="submit">Entrar</button>
+    <button class="btn ghost" id="lg-new" type="button">Crear cuenta</button>
+    <button class="linkbtn" id="lg-reset" type="button">Olvidé mi contraseña</button>
+  </form>
+</div>
+<datalist id="locs"></datalist>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var norm = function (s) { return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); };
+  var money = function (n) { n = Math.round(Number(n) || 0); return '$' + String(n).replace(/\B(?=(\d{3})+(?!\d))/g, '.'); };
+  var fmtShort = new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  var MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+  var fmtLong = function (d) { return d.getDate() + ' de ' + MESES[d.getMonth()] + ' de ' + d.getFullYear() + ', ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+
+  function h(tag, props) {
+    var e = document.createElement(tag);
+    props = props || {};
+    for (var k in props) {
+      var v = props[k];
+      if (k === 'class') e.className = v;
+      else if (k === 'text') e.textContent = v;
+      else if (k.indexOf('on') === 0) e.addEventListener(k.slice(2), v);
+      else if (v === true) e.setAttribute(k, '');
+      else if (v !== false && v != null) e.setAttribute(k, v);
+    }
+    for (var i = 2; i < arguments.length; i++) {
+      var kids = [].concat(arguments[i]);
+      for (var j = 0; j < kids.length; j++) {
+        var c = kids[j];
+        if (c == null || c === false) continue;
+        e.append(c.nodeType ? c : document.createTextNode(String(c)));
+      }
+    }
+    return e;
+  }
+
+  /* ---------- almacenamiento ---------- */
+  function localBackend() {
+    var KEY = 'control-stock-v1', data = {}, cb = function () {};
+    var CK = 'control-stock-cols-v1', cols = [], colsCb = function () {};
+    try { cols = JSON.parse(localStorage.getItem(CK) || '[]') || []; } catch (e) { cols = []; }
+    try { data = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { data = {}; }
+    function persist() { try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) {} }
+    return {
+      kind: 'local',
+      subscribeCols: function (f) { colsCb = f; f(cols.slice()); },
+      saveCols: function (l) { cols = l; try { localStorage.setItem(CK, JSON.stringify(cols)); } catch (e) {} colsCb(cols.slice()); return Promise.resolve(); },
+      subscribe: function (f) { cb = f; f(Object.assign({}, data)); },
+      save: function (id, o) { data[id] = o; persist(); cb(Object.assign({}, data)); return Promise.resolve(); },
+      remove: function (id) { delete data[id]; persist(); cb(Object.assign({}, data)); return Promise.resolve(); }
+    };
+  }
+  function dbBackend(db) {
+    var col = db.collection('products'), meta = db.doc('meta/columns');
+    return {
+      kind: 'db',
+      subscribeCols: function (f) { meta.onSnapshot(function (s) { var d = s.exists ? s.data() : null; f(d && Array.isArray(d.list) ? d.list : []); }, function () {}); },
+      saveCols: function (l) { return meta.set({ list: l }); },
+      subscribe: function (f, onErr) {
+        col.onSnapshot(function (s) {
+          var m = {};
+          s.docs.forEach(function (d) { m[d.id] = d.data(); });
+          f(m);
+        }, function (e) { if (onErr) onErr(e); });
+      },
+      save: function (id, o) { return col.doc(id).set(o); },
+      remove: function (id) { return col.doc(id).delete(); }
+    };
+  }
+
+  /* ---------- estado ---------- */
+  var backend = null, dl = null, ready = false, products = [], byId = {};
+  var tab = 'movimiento', busy = false, mvSel = null, mvType = 'in', pendingSelect = null;
+  var sheetId = null, lastFocus = null, lastMove = null;
+  var columns = [], drafts = [], lastWritten = {}, chains = {};
+
+  function clean(id, raw) {
+    raw = raw || {};
+    var ex = raw.extra && typeof raw.extra === 'object' && !Array.isArray(raw.extra) ? raw.extra : {};
+    var int0 = function (v) { return Math.max(0, Math.floor(Number(v) || 0)); };
+    return {
+      id: id,
+      name: String(raw.name || 'Sin nombre'),
+      location: String(raw.location || ''),
+      qty: int0(raw.qty), min: int0(raw.min), price: int0(raw.price), cost: int0(raw.cost),
+      hist: Array.isArray(raw.hist) ? raw.hist.filter(function (x) { return x && typeof x === 'object'; }) : [],
+      example: raw.example === true,
+      extra: ex,
+      created: Number(raw.created) || 0,
+      haystack: norm((raw.name || '') + ' ' + (raw.sku || '') + ' ' + (raw.location || '') + ' ' + Object.keys(ex).map(function (k) { return ex[k]; }).join(' ')),
+      raw: raw
+    };
+  }
+  var isMissing = function (p) { return p.min > 0 && p.qty < p.min; };
+  function missingList(ovId, ovQty) {
+    return products.map(function (p) { return p.id === ovId ? Object.assign({}, p, { qty: ovQty }) : p; })
+      .filter(isMissing)
+      .sort(function (a, b) { return (b.min - b.qty) - (a.min - a.qty) || a.name.localeCompare(b.name, 'es', { numeric: true }); });
+  }
+  function matches(q) {
+    var toks = norm(q).split(/\s+/).filter(Boolean);
+    if (!toks.length) return products;
+    return products.filter(function (p) { return toks.every(function (t) { return p.haystack.indexOf(t) !== -1; }); });
+  }
+  function onData(m) {
+    ready = true;
+    products = Object.keys(m).map(function (id) { return clean(id, m[id]); })
+      .sort(function (a, b) { return a.name.localeCompare(b.name, 'es', { numeric: true }); });
+    byId = {};
+    products.forEach(function (p) { byId[p.id] = p; });
+    products.forEach(function (p) { if (lastWritten[p.id] && p.raw.updated === lastWritten[p.id].updated) delete lastWritten[p.id]; });
+    drafts = drafts.filter(function (d) { return !byId[d.id]; });
+    ensureDrafts();
+    if (pendingSelect && byId[pendingSelect]) { var id = pendingSelect; pendingSelect = null; mvSel = id; $('#mv-name').value = byId[id].name; }
+    renderAll();
+  }
+
+  var toastTimer = null;
+  function toast(text) {
+    var t = $('#toast'); t.textContent = text; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { t.hidden = true; }, 4000);
+  }
+
+  /* ---------- render ---------- */
+  function locTag(p, big) { return p.location ? h('span', { class: 'tag' + (big ? ' big' : ''), text: p.location }) : null; }
+
+  function renderSummary() {
+    var s = $('#summary');
+    var miss = ready ? missingList().length : 0;
+    var b = $('#tab-faltantes'); b.replaceChildren('Faltantes', miss ? h('span', { class: 'badge', text: String(miss) }) : null);
+    if (!ready) { s.textContent = 'Cargando inventario…'; return; }
+    var value = products.reduce(function (t, p) { return t + p.qty * p.price; }, 0);
+    s.replaceChildren(h('span', {}, h('b', { text: String(products.length) }), products.length === 1 ? ' producto · valor ' : ' productos · valor ',
+      h('b', { text: money(value) }), miss ? [' · ', h('span', { class: 'pill', text: miss + (miss === 1 ? ' falta' : ' faltan') })] : null));
+  }
+
+  function selectedCard(p) {
+    return h('div', { class: 'selected' },
+      h('span', { class: 'nm', text: p.name }),
+      h('div', { class: 'stock' }, h('b', { class: isMissing(p) ? 'low' : '', text: String(p.qty) }), h('small', { text: 'en inventario' })),
+      h('div', { class: 'meta' },
+        p.min ? h('span', { text: 'Mínimo ' + p.min }) : h('span', { text: 'Sin mínimo' }),
+        p.price ? h('span', { text: 'Cliente ' + money(p.price) }) : null,
+        isMissing(p) ? h('span', { class: 'pill', text: 'Falta' }) : null,
+        locTag(p),
+        h('button', { class: 'linkbtn', type: 'button', onclick: clearSelection, text: 'Cambiar' })));
+  }
+  function renderMov() {
+    var q = $('#mv-name').value, sg = $('#mv-sugg'), card = $('#mv-card');
+    sg.replaceChildren(); card.replaceChildren();
+    var p = mvSel ? byId[mvSel] : null;
+    if (mvSel && !p) mvSel = null;
+    if (p) { card.append(selectedCard(p)); return; }
+    if (!ready || !q.trim()) return;
+    var f = matches(q).slice(0, 6);
+    if (!f.length) {
+      sg.append(h('div', { class: 'sugg-empty' }, h('span', { text: 'No existe «' + q.trim() + '».' }),
+        h('button', { class: 'btn primary sm', type: 'button', onclick: function () { openSheet(null, q.trim()); }, text: 'Crear producto' })));
+      return;
+    }
+    sg.append(h('div', { class: 'sugg-list' }, f.map(function (x) {
+      return h('button', { class: 'sugg', type: 'button', onclick: function () { selectProduct(x.id); } },
+        h('span', { class: 'nm', text: x.name }), h('span', { class: 'q', text: String(x.qty) }));
+    })));
+  }
+  function selectProduct(id) {
+    var p = byId[id]; if (!p) return;
+    mvSel = id; $('#mv-name').value = p.name; $('#mv-err').hidden = true; $('#mv-result').replaceChildren();
+    renderMov();
+    var qi = $('#mv-qty'); qi.focus(); qi.select();
+  }
+  function clearSelection() { mvSel = null; var i = $('#mv-name'); i.value = ''; renderMov(); i.focus(); }
+
+  /* ---------- inventario: cuadrícula editable ---------- */
+  var BASE_COLS = [
+    { key: 'name', label: 'Producto' },
+    { key: 'qty', label: 'Cant.', num: true },
+    { key: 'min', label: 'Mín.', num: true },
+    { key: 'price', label: 'Precio cliente', num: true },
+    { key: 'cost', label: 'Precio costo', num: true },
+    { key: 'location', label: 'Ubicación' }
+  ];
+  var NUM = { qty: 1, min: 1, price: 1, cost: 1 };
+  var gridSig = '';
+  var newId = function () { return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); };
+  var toInt = function (v) { var d = String(v == null ? '' : v).replace(/[^\d]/g, ''); return d === '' ? 0 : parseInt(d, 10); };
+
+  function ensureDrafts() {
+    var open = drafts.filter(function (d) { return !d.saving; }).length;
+    while (open < 5) { drafts.push({ id: newId(), values: {}, saving: false }); open++; }
+  }
+  function allCols() { return BASE_COLS.concat(columns.map(function (c) { return { key: c.id, label: c.name, custom: true }; })); }
+  function gridRows() {
+    var q = $('#q').value;
+    var list = matches(q).slice().sort(function (a, b) { return (a.created - b.created) || a.name.localeCompare(b.name, 'es', { numeric: true }); });
+    var rows = list.map(function (p) { return { id: p.id, p: p }; });
+    if (!norm(q)) drafts.forEach(function (d) { rows.push({ id: d.id, d: d }); });
+    return rows;
+  }
+  function cellValue(row, col) {
+    if (!row.p) { var v = row.d.values[col]; return v == null ? '' : String(v); }
+    var p = row.p;
+    if (col === 'name' || col === 'location') return p[col];
+    if (col === 'qty' || col === 'min') return String(p[col]);
+    if (col === 'price' || col === 'cost') return p[col] ? String(p[col]) : '';
+    return p.extra[col] == null ? '' : String(p.extra[col]);
+  }
+
+  function renderGrid() {
+    var grid = $('#grid'), note = $('#inv-note'), cols = allCols();
+    note.replaceChildren();
+    if (!ready) { grid.replaceChildren(); gridSig = ''; note.append(h('p', { class: 'hint', text: 'Cargando…' })); return; }
+    var ex = products.filter(function (p) { return p.example; });
+    if (ex.length) note.append(h('p', { class: 'banner' },
+      h('span', { text: 'Hay ' + ex.length + ' productos de ejemplo para que pruebes la app.' }),
+      h('button', { class: 'btn ghost sm', type: 'button', onclick: function (ev) { clearExamples(ev.currentTarget); }, text: 'Borrar ejemplos' })));
+    var rows = gridRows();
+    var sig = rows.map(function (r) { return r.id; }).join(',') + '|' + cols.map(function (c) { return c.key + ':' + c.label; }).join(',');
+    if (sig === gridSig) { updateGrid(rows, cols); return; }
+    gridSig = sig;
+
+    var ae = document.activeElement, keep = null;
+    if (ae && ae.dataset && ae.dataset.id && grid.contains(ae)) keep = { id: ae.dataset.id, col: ae.dataset.col, v: ae.value, s: ae.selectionStart, e: ae.selectionEnd };
+    var thead = h('thead', {}, h('tr', {},
+      h('th', { class: 'idx', text: '#' }),
+      cols.map(function (c) {
+        if (c.custom) return h('th', {}, h('button', { class: 'colbtn', type: 'button', onclick: function () { openColSheet(c.key); }, text: c.label }));
+        return h('th', { class: c.key === 'name' ? 'c-name' : (c.num ? 'num' : ''), text: c.label });
+      })));
+    var tbody = h('tbody');
+    rows.forEach(function (r, i) {
+      var tr = h('tr', { 'data-row': r.id });
+      tr.append(h('td', { class: 'idx' }, h('button', { class: 'idxbtn', type: 'button', disabled: !r.p, 'aria-label': 'Detalles de la fila ' + (i + 1), onclick: r.p ? function () { openSheet(r.id); } : null, text: String(i + 1) })));
+      cols.forEach(function (c) {
+        var inp = h('input', { type: 'text', 'data-id': r.id, 'data-col': c.key, value: cellValue(r, c.key), autocomplete: 'off', autocapitalize: 'none', enterkeyhint: 'next', 'aria-label': c.label + ', fila ' + (i + 1) });
+        if (c.num) inp.setAttribute('inputmode', 'numeric');
+        tr.append(h('td', { class: (c.key === 'name' ? 'c-name ' : '') + (c.num ? 'num' : '') + (c.key === 'qty' && r.p && isMissing(r.p) ? ' low' : '') }, inp));
+      });
+      tbody.append(tr);
+    });
+    grid.replaceChildren(thead, tbody);
+    if (keep) {
+      var el = grid.querySelector('input[data-id="' + keep.id + '"][data-col="' + keep.col + '"]');
+      if (el) { el.value = keep.v; el.focus(); try { el.setSelectionRange(keep.s, keep.e); } catch (e) {} }
+    }
+  }
+  function updateGrid(rows, cols) {
+    var trs = $('#grid tbody').children;
+    rows.forEach(function (r, i) {
+      var tr = trs[i]; if (!tr) return;
+      cols.forEach(function (c) {
+        var inp = tr.querySelector('input[data-col="' + c.key + '"]');
+        if (inp && inp !== document.activeElement) inp.value = cellValue(r, c.key);
+        if (c.key === 'qty' && inp) inp.parentNode.classList.toggle('low', !!(r.p && isMissing(r.p)));
+      });
+    });
+  }
+
+  /* guardar cambios de una casilla */
+  function patch(id, build) {
+    var p = byId[id]; if (!p) return;
+    var base = Object.assign({}, p.raw, lastWritten[id] || {});
+    var doc = Object.assign(base, build(base), { updated: Date.now() });
+    delete doc.example;
+    lastWritten[id] = doc;
+    chains[id] = (chains[id] || Promise.resolve()).then(function () { return backend.save(id, doc); })
+      .catch(function () { toast('No se pudo guardar el cambio. Revisa la conexión.'); });
+  }
+  function editCell(p, col, v, input) {
+    v = String(v);
+    if (col === 'name' && !v.trim()) { input.value = p.name; return; }
+    if (NUM[col]) { var n = toInt(v); input.value = (col === 'price' || col === 'cost') && n === 0 ? '' : String(n); v = n; }
+    patch(p.id, function (b) {
+      var f = {};
+      if (col === 'name') f.name = v.trim();
+      else if (col === 'location') f.location = v.trim().replace(/\s+/g, ' ');
+      else if (col === 'qty') {
+        var old = Math.max(0, Math.floor(Number(b.qty) || 0));
+        f.qty = v;
+        if (v !== old) f.hist = [{ t: Date.now(), d: v - old, a: v, adj: true }].concat(Array.isArray(b.hist) ? b.hist : []).slice(0, 15);
+      }
+      else if (NUM[col]) f[col] = v;
+      else { var ex = Object.assign({}, b.extra); ex[col] = v.trim(); f.extra = ex; }
+      return f;
+    });
+  }
+  function commitDraft(d) {
+    if (d.saving) return;
+    var name = String(d.values.name || '').trim();
+    if (!name) return;
+    var extra = {};
+    columns.forEach(function (c) { if (d.values[c.id]) extra[c.id] = String(d.values[c.id]).trim(); });
+    var doc = { name: name, location: String(d.values.location || '').trim(), qty: toInt(d.values.qty), min: toInt(d.values.min), price: toInt(d.values.price), cost: toInt(d.values.cost),
+      hist: [], extra: extra, created: Date.now(), updated: Date.now() };
+    d.saving = true; ensureDrafts();
+    lastWritten[d.id] = doc;
+    chains[d.id] = Promise.resolve().then(function () { return backend.save(d.id, doc); })
+      .catch(function () { d.saving = false; delete lastWritten[d.id]; toast('No se pudo guardar la fila. Revisa la conexión.'); renderGrid(); });
+    renderGrid();
+  }
+
+  var gridEl = $('#grid');
+  gridEl.addEventListener('change', function (e) {
+    var t = e.target; if (!t.dataset || !t.dataset.id) return;
+    var id = t.dataset.id, col = t.dataset.col, p = byId[id];
+    if (p) { editCell(p, col, t.value, t); return; }
+    var d = drafts.filter(function (x) { return x.id === id; })[0]; if (!d) return;
+    var v = NUM[col] ? String(toInt(t.value) || '') : t.value;
+    if (NUM[col]) t.value = v;
+    d.values[col] = v;
+    setTimeout(function () { commitDraft(d); }, 0);
+  });
+  gridEl.addEventListener('keydown', function (e) {
+    var t = e.target; if (!t.dataset || !t.dataset.id) return;
+    var dir = e.key === 'Enter' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+    if (!dir) return;
+    e.preventDefault();
+    var tr = t.closest('tr'), next = dir > 0 ? tr.nextElementSibling : tr.previousElementSibling;
+    if (!next) { t.blur(); return; }
+    var n = next.querySelector('input[data-col="' + t.dataset.col + '"]');
+    if (n) { n.focus(); n.select(); }
+  });
+  gridEl.addEventListener('focusin', function (e) {
+    var t = e.target;
+    if (t.dataset && NUM[t.dataset.col]) setTimeout(function () { try { t.select(); } catch (x) {} }, 0);
+  });
+
+  /* columnas de características */
+  function openColSheet(colId) {
+    lastFocus = document.activeElement;
+    var c = colId ? columns.filter(function (x) { return x.id === colId; })[0] : null;
+    $('#overlay').hidden = false;
+    $('#sheet-title').textContent = c ? 'Columna' : 'Nueva columna';
+    var body = $('#sheet-body'); body.replaceChildren();
+    var inp = h('input', { id: 'col-name', required: true, maxlength: '30', autocomplete: 'off', placeholder: 'Ej. Marca, Color, Calidad', value: c ? c.name : '' });
+    var err = h('p', { class: 'err', role: 'alert', hidden: true });
+    var armed = false, del = null;
+    var form = h('form', { class: 'form', novalidate: true },
+      h('label', {}, 'Nombre de la columna', inp, h('span', { class: 'hint', text: 'Sirve para anotar una característica de cada producto.' })),
+      err,
+      h('div', { class: 'actions' },
+        h('button', { class: 'btn primary', type: 'submit', text: 'Guardar' }),
+        h('button', { class: 'btn ghost', type: 'button', onclick: closeSheet, text: 'Cancelar' })));
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var name = inp.value.trim();
+      if (!name) { err.hidden = false; err.textContent = 'Escribe el nombre de la columna.'; return; }
+      var list = columns.map(function (x) { return { id: x.id, name: x.id === (c && c.id) ? name : x.name }; });
+      if (!c) {
+        if (list.length >= 12) { err.hidden = false; err.textContent = 'El máximo es de 12 columnas extra.'; return; }
+        list.push({ id: 'c' + Date.now().toString(36), name: name });
+      }
+      try { await backend.saveCols(list); closeSheet(); toast(c ? 'Columna guardada.' : 'Columna agregada.'); }
+      catch (x) { err.hidden = false; err.textContent = 'No se pudo guardar. Inténtalo de nuevo.'; }
+    });
+    body.append(form);
+    if (c) {
+      del = h('button', { class: 'btn danger sm', type: 'button', text: 'Eliminar columna', onclick: async function () {
+        if (!armed) { armed = true; del.textContent = 'Toca otra vez para eliminar'; setTimeout(function () { armed = false; del.textContent = 'Eliminar columna'; }, 4000); return; }
+        try { await backend.saveCols(columns.filter(function (x) { return x.id !== c.id; })); closeSheet(); toast('Columna eliminada.'); }
+        catch (x) { err.hidden = false; err.textContent = 'No se pudo eliminar. Inténtalo de nuevo.'; }
+      } });
+      body.append(h('div', { class: 'actions', style: 'margin-top:18px' }, del));
+    }
+    inp.focus();
+  }
+
+  function renderFalt() {
+    var box = $('#panel-faltantes'); box.replaceChildren();
+    if (!ready) return;
+    var l = missingList();
+    if (!l.length) {
+      box.append(h('div', { class: 'empty' }, h('p', {}, h('strong', { text: 'Todo en orden.' }), ' Ningún producto está por debajo del mínimo.')));
+      return;
+    }
+    box.append(h('div', { class: 'f-head' }, h('h2', { text: l.length + (l.length === 1 ? ' producto falta' : ' productos faltan') }),
+      dl ? h('button', { class: 'btn primary sm', type: 'button', onclick: function () { savePdf(null); }, text: 'Descargar PDF' }) : null));
+    box.append(h('div', {}, l.map(function (p) {
+      return h('button', { class: 'fr', type: 'button', onclick: function () { openSheet(p.id); } },
+        h('span', { class: 'nm', text: p.name }),
+        h('span', { class: 'd', text: 'Tienes ' + p.qty + ' · mínimo ' + p.min + '' }),
+        h('span', { class: 'need' }, String(p.min - p.qty), h('small', { text: 'faltan' })));
+    })));
+  }
+  function renderAll() {
+    var dlist = $('#locs'); dlist.replaceChildren();
+    var seen = {};
+    products.forEach(function (p) { if (p.location && !seen[p.location]) { seen[p.location] = 1; dlist.append(h('option', { value: p.location })); } });
+    renderSummary(); renderMov(); renderGrid(); renderFalt();
+  }
+
+  function setTab(t) {
+    tab = t;
+    ['movimiento', 'inventario', 'faltantes'].forEach(function (n) {
+      $('#tab-' + n).setAttribute('aria-selected', n === t ? 'true' : 'false');
+      $('#panel-' + n).hidden = n !== t;
+    });
+    window.scrollTo(0, 0);
+  }
+  ['movimiento', 'inventario', 'faltantes'].forEach(function (n) { $('#tab-' + n).addEventListener('click', function () { setTab(n); }); });
+
+  /* ---------- pantalla de movimiento ---------- */
+  var nameIn = $('#mv-name'), qtyIn = $('#mv-qty');
+  nameIn.addEventListener('input', function () {
+    if (mvSel && byId[mvSel] && byId[mvSel].name !== nameIn.value) mvSel = null;
+    renderMov();
+  });
+  nameIn.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    if (mvSel || !ready || !nameIn.value.trim()) return;
+    var f = matches(nameIn.value);
+    if (f.length) selectProduct(f[0].id);
+  });
+  $('#mv-minus').addEventListener('click', function () { qtyIn.value = String(Math.max(1, (parseInt(qtyIn.value, 10) || 1) - 1)); });
+  $('#mv-plus').addEventListener('click', function () { qtyIn.value = String((parseInt(qtyIn.value, 10) || 0) + 1); });
+  function setType(t) {
+    mvType = t;
+    $('#seg-in').setAttribute('aria-pressed', t === 'in' ? 'true' : 'false');
+    $('#seg-out').setAttribute('aria-pressed', t === 'out' ? 'true' : 'false');
+  }
+  $('#seg-in').addEventListener('click', function () { setType('in'); });
+  $('#seg-out').addEventListener('click', function () { setType('out'); });
+  try { if (localStorage.getItem('control-stock-pdf') === '0') $('#mv-pdf').checked = false; } catch (e) {}
+  $('#mv-pdf').addEventListener('change', function (e) { try { localStorage.setItem('control-stock-pdf', e.target.checked ? '1' : '0'); } catch (x) {} });
+
+  function mvError(t) { var e = $('#mv-err'); e.textContent = t; e.hidden = !t; }
+  $('#mv-ok').addEventListener('click', accept);
+  async function accept() {
+    if (busy) return;
+    mvError('');
+    var p = mvSel ? byId[mvSel] : null;
+    if (!p) { mvError('Escribe el nombre y elige un producto de la lista.'); return; }
+    var n = parseInt(qtyIn.value, 10);
+    if (!(n > 0)) { mvError('Escribe una cantidad de 1 o más.'); return; }
+    if (mvType === 'out' && n > p.qty) { mvError('Solo hay ' + p.qty + ' en inventario. No puedes retirar ' + n + '.'); return; }
+    busy = true; $('#mv-ok').disabled = true;
+    var dir = mvType === 'in' ? 1 : -1, after = p.qty + dir * n;
+    var next = Object.assign({}, p.raw, { qty: after, hist: [{ t: Date.now(), d: dir * n, a: after }].concat(p.hist).slice(0, 15), updated: Date.now() });
+    try { await backend.save(p.id, next); }
+    catch (e) { mvError('No se pudo guardar. Revisa la conexión e inténtalo de nuevo.'); busy = false; $('#mv-ok').disabled = false; return; }
+    lastMove = { id: p.id, name: p.name, dir: dir, n: n, before: p.qty, after: after, price: p.price, min: p.min, location: p.location };
+    qtyIn.value = '1';
+    showResult(lastMove);
+    busy = false; $('#mv-ok').disabled = false;
+    if (dl && $('#mv-pdf').checked) savePdf(lastMove);
+  }
+  function showResult(mv) {
+    var box = $('#mv-result'), miss = missingList(mv.id, mv.after), shown = miss.slice(0, 8);
+    box.replaceChildren(h('div', { class: 'result' },
+      h('h3', { text: mv.name }),
+      h('div', { class: 'big ' + (mv.dir > 0 ? 'in' : 'out'), text: (mv.dir > 0 ? 'Ingresan ' : 'Retiran ') + mv.n + ' · ' + mv.before + ' → ' + mv.after }),
+      mv.location ? h('div', {}, h('span', { class: 'sub', text: mv.dir > 0 ? 'Guárdalo en' : 'Sácalo de' }), h('div', { style: 'margin-top:6px' }, locTag(mv, true))) : null,
+      mv.min && mv.after < mv.min ? h('div', {}, h('span', { class: 'pill', text: 'Quedó por debajo del mínimo (' + mv.min + ')' })) : null,
+      h('p', { class: 'sub', text: miss.length ? 'Faltantes (' + miss.length + ')' : 'Faltantes' }),
+      miss.length
+        ? h('ul', { class: 'mini' }, shown.map(function (x) { return h('li', {}, h('span', { class: 'nm', text: x.name }), h('span', { class: 'f', text: 'faltan ' + (x.min - x.qty) })); }),
+            miss.length > shown.length ? h('li', {}, h('span', { class: 'nm', text: 'y ' + (miss.length - shown.length) + ' más' }), h('button', { class: 'linkbtn', type: 'button', onclick: function () { setTab('faltantes'); }, text: 'Ver todos' })) : null)
+        : h('p', { style: 'margin:0;color:var(--muted)', text: 'Ningún producto está por debajo del mínimo.' }),
+      dl ? h('button', { class: 'btn ghost', type: 'button', onclick: function () { savePdf(lastMove); }, text: 'Descargar PDF' }) : null));
+  }
+
+  /* ---------- PDF ---------- */
+  function buildPdf(JsPDF, mv, list) {
+    var doc = new JsPDF({ unit: 'mm', format: 'a4' });
+    var W = 210, M = 15, BOTTOM = 280, y = M;
+    var INK = [20, 35, 31], GRAY = [82, 98, 92], TEAL = [15, 107, 92], RED = [179, 38, 30], LINE = [207, 216, 212];
+    var color = function (c) { doc.setTextColor(c[0], c[1], c[2]); };
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(20); color(INK);
+    doc.text('Reporte de inventario', M, y + 6);
+    y += 13; doc.setFont('helvetica', 'normal'); doc.setFontSize(10); color(GRAY);
+    doc.text('Generado el ' + fmtLong(new Date()), M, y);
+    y += 4; doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.line(M, y, W - M, y);
+
+    if (mv) {
+      y += 10; doc.setFont('helvetica', 'bold'); doc.setFontSize(12); color(INK); doc.text('Movimiento registrado', M, y);
+      var rows = [
+        ['Producto', mv.name],
+        ['Movimiento', (mv.dir > 0 ? 'Ingreso de ' : 'Retiro de ') + mv.n + (mv.n === 1 ? ' unidad' : ' unidades')],
+        ['Cantidad', 'Antes: ' + mv.before + '    Después: ' + mv.after],
+        ['Mínimo', mv.min ? String(mv.min) : 'Sin mínimo']
+      ];
+      if (mv.location) rows.push(['Ubicación', mv.location]);
+      doc.setFontSize(10);
+      rows.forEach(function (r) {
+        var lines = doc.splitTextToSize(r[1], W - M - (M + 38));
+        y += 6.5; doc.setFont('helvetica', 'normal'); color(GRAY); doc.text(r[0], M, y);
+        doc.setFont('helvetica', r[0] === 'Producto' ? 'bold' : 'normal'); color(INK); doc.text(lines, M + 38, y);
+        y += (lines.length - 1) * 4.5;
+      });
+      y += 5; doc.line(M, y, W - M, y);
+    }
+
+    y += 10; doc.setFont('helvetica', 'bold'); doc.setFontSize(12); color(INK);
+    doc.text('Productos faltantes (' + list.length + ')', M, y);
+    var cols = [{ t: 'Producto', w: 108, a: 'left' }, { t: 'Cantidad', w: 24, a: 'right' }, { t: 'Mínimo', w: 24, a: 'right' }, { t: 'Faltan', w: 24, a: 'right' }];
+    var colX = function (i) { var x = M; for (var k = 0; k < i; k++) x += cols[k].w; return x; };
+    function head() {
+      y += 4; doc.setFillColor(TEAL[0], TEAL[1], TEAL[2]); doc.rect(M, y, W - 2 * M, 8, 'F');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
+      cols.forEach(function (c, i) { doc.text(c.t, c.a === 'left' ? colX(i) + 2 : colX(i) + c.w - 2, y + 5.4, { align: c.a }); });
+      y += 8;
+    }
+    if (!list.length) {
+      y += 8; doc.setFont('helvetica', 'normal'); doc.setFontSize(10); color(GRAY);
+      doc.text('Ningún producto está por debajo del mínimo.', M, y);
+    } else {
+      head();
+      doc.setFontSize(10);
+      list.forEach(function (p) {
+        var lines = doc.splitTextToSize(p.name, cols[0].w - 4), rh = lines.length * 4.6 + 4;
+        if (y + rh > BOTTOM) { doc.addPage(); y = M - 4; head(); doc.setFontSize(10); }
+        var ty = y + 5.4;
+        doc.setFont('helvetica', 'normal'); color(INK); doc.text(lines, colX(0) + 2, ty);
+        doc.text(String(p.qty), colX(1) + cols[1].w - 2, ty, { align: 'right' });
+        doc.text(String(p.min), colX(2) + cols[2].w - 2, ty, { align: 'right' });
+        doc.setFont('helvetica', 'bold'); color(RED); doc.text(String(p.min - p.qty), colX(3) + cols[3].w - 2, ty, { align: 'right' });
+        y += rh; doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.line(M, y, W - M, y);
+      });
+    }
+    var pages = doc.getNumberOfPages();
+    for (var i = 1; i <= pages; i++) {
+      doc.setPage(i); doc.setFont('helvetica', 'normal'); doc.setFontSize(8); color(GRAY);
+      doc.text('Página ' + i + ' de ' + pages, W - M, 290, { align: 'right' });
+    }
+    return doc;
+  }
+  async function savePdf(mv) {
+    if (!dl) return;
+    var JsPDF = window.jspdf && window.jspdf.jsPDF;
+    if (!JsPDF) { toast('No cargó el generador de PDF. Revisa la conexión.'); return; }
+    var d = new Date(), name = 'reporte-inventario-' + d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + '.pdf';
+    try {
+      var doc = buildPdf(JsPDF, mv, mv ? missingList(mv.id, mv.after) : missingList());
+      await dl.save({ filename: name, data: doc.output('arraybuffer') });
+      toast('PDF guardado.');
+    } catch (e) {
+      toast(e && e.code === 'declined' ? 'No se descargó el PDF.' : 'No se pudo guardar el PDF.');
+    }
+  }
+
+  /* ---------- inventario: buscar, crear, editar ---------- */
+  $('#q').addEventListener('input', renderGrid);
+  $('#btn-col').addEventListener('click', function () { openColSheet(null); });
+  async function clearExamples(btn) {
+    btn.disabled = true;
+    var ex = products.filter(function (p) { return p.example; });
+    try { for (var i = 0; i < ex.length; i++) await backend.remove(ex[i].id); } catch (e) { btn.disabled = false; }
+  }
+
+  function openSheet(id, prefill) {
+    lastFocus = document.activeElement;
+    sheetId = id || null;
+    var p = id ? byId[id] : null;
+    $('#overlay').hidden = false;
+    $('#sheet-title').textContent = p ? p.name : 'Nuevo producto';
+    var body = $('#sheet-body'); body.replaceChildren();
+    var f = {
+      name: h('input', { id: 'f-name', required: true, autocomplete: 'off', value: p ? p.name : (prefill || '') }),
+      qty: h('input', { id: 'f-qty', type: 'number', inputmode: 'numeric', min: '0', step: '1', value: p ? String(p.qty) : '0' }),
+      min: h('input', { id: 'f-min', type: 'number', inputmode: 'numeric', min: '0', step: '1', value: p ? String(p.min) : '0' }),
+      price: h('input', { id: 'f-price', type: 'number', inputmode: 'numeric', min: '0', step: '1', placeholder: 'Ej. 30000', value: p && p.price ? String(p.price) : '' }),
+      cost: h('input', { id: 'f-cost', type: 'number', inputmode: 'numeric', min: '0', step: '1', placeholder: 'Ej. 20000', value: p && p.cost ? String(p.cost) : '' }),
+      loc: h('input', { id: 'f-loc', list: 'locs', autocomplete: 'off', placeholder: 'Ej. Estante A · Nivel 2', value: p ? p.location : '' })
+    };
+    var xin = columns.map(function (c) { return h('input', { id: 'x-' + c.id, autocomplete: 'off', value: p && p.extra[c.id] != null ? String(p.extra[c.id]) : '' }); });
+    var err = h('p', { class: 'err', role: 'alert', hidden: true });
+    var delBtn = null, armed = false;
+    var form = h('form', { class: 'form', novalidate: true },
+      h('label', {}, 'Producto', f.name),
+      h('div', { class: 'two' }, h('label', {}, 'Cantidad', f.qty), h('label', {}, 'Mínimo que debo tener', f.min)),
+      h('div', { class: 'two' }, h('label', {}, 'Precio cliente', f.price), h('label', {}, 'Precio costo', f.cost)),
+      h('label', {}, 'Ubicación (opcional)', f.loc, h('span', { class: 'hint', text: 'Si la llenas, al ingresar o retirar la app te dice dónde va.' })),
+      columns.map(function (c, i) { return h('label', {}, c.name, xin[i]); }),
+      err,
+      h('div', { class: 'actions' },
+        h('button', { class: 'btn primary', type: 'submit', text: 'Guardar' }),
+        p ? h('button', { class: 'btn ghost', type: 'button', onclick: function () { closeSheet(); setTab('movimiento'); selectProduct(p.id); }, text: 'Mover stock' }) : null,
+        h('button', { class: 'btn ghost', type: 'button', onclick: closeSheet, text: 'Cancelar' })));
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      if (busy) return;
+      var name = f.name.value.trim(), loc = f.loc.value.trim().replace(/\s+/g, ' ');
+      var qty = Math.floor(Number(f.qty.value)), min = Math.floor(Number(f.min.value)), price = f.price.value === '' ? 0 : Math.floor(Number(f.price.value)), cost = f.cost.value === '' ? 0 : Math.floor(Number(f.cost.value));
+      var problem = !name ? 'Escribe el nombre del producto.' : !(qty >= 0) ? 'La cantidad debe ser 0 o más.' :
+        !(min >= 0) ? 'El mínimo debe ser 0 o más.' : !(price >= 0 && cost >= 0) ? 'Los precios deben ser 0 o más.' : '';
+      if (problem) { err.hidden = false; err.textContent = problem; return; }
+      var nid = p ? p.id : 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      var hist = p ? p.hist : [];
+      if (p && qty !== p.qty) hist = [{ t: Date.now(), d: qty - p.qty, a: qty, adj: true }].concat(hist).slice(0, 15);
+      var extra = Object.assign({}, p ? p.extra : {});
+      columns.forEach(function (c, i) { extra[c.id] = xin[i].value.trim(); });
+      var doc = Object.assign({}, p ? p.raw : {}, { name: name, location: loc, qty: qty, min: min, price: price, cost: cost, hist: hist, extra: extra, updated: Date.now() });
+      if (!p) doc.created = Date.now();
+      delete doc.example;
+      lastWritten[nid] = doc;
+      busy = true;
+      try {
+        await backend.save(nid, doc); busy = false; closeSheet();
+        if (!p && tab === 'movimiento') { if (byId[nid]) selectProduct(nid); else pendingSelect = nid; }
+        toast('Producto guardado.');
+      } catch (x) { busy = false; err.hidden = false; err.textContent = 'No se pudo guardar. Revisa la conexión e inténtalo de nuevo.'; }
+    });
+    body.append(form);
+    if (p && p.hist.length) {
+      body.append(h('div', { style: 'margin-top:18px' }, h('span', { class: 'label', text: 'Últimos movimientos' }),
+        h('ul', { class: 'hist' }, p.hist.slice(0, 6).map(function (m) {
+          var d = Math.trunc(Number(m.d) || 0);
+          return h('li', {}, h('span', { text: (m.t ? fmtShort.format(new Date(m.t)) : '') + (m.adj ? ' · ajuste' : '') }),
+            h('span', { class: 'd ' + (d >= 0 ? 'p' : 'n'), text: (d >= 0 ? '+' : '−') + Math.abs(d) }),
+            h('span', { text: '→ ' + (Number(m.a) || 0) }));
+        }))));
+    }
+    if (p) {
+      delBtn = h('button', { class: 'btn danger sm', type: 'button', text: 'Eliminar producto', onclick: async function () {
+        if (!armed) { armed = true; delBtn.textContent = 'Toca otra vez para eliminar'; setTimeout(function () { armed = false; delBtn.textContent = 'Eliminar producto'; }, 4000); return; }
+        try { await backend.remove(p.id); if (mvSel === p.id) { mvSel = null; nameIn.value = ''; } closeSheet(); toast('Producto eliminado.'); }
+        catch (x) { err.hidden = false; err.textContent = 'No se pudo eliminar. Inténtalo de nuevo.'; }
+      } });
+      body.append(h('div', { class: 'actions', style: 'margin-top:18px' }, delBtn));
+    }
+    f.name.focus();
+  }
+  function closeSheet() {
+    $('#overlay').hidden = true; sheetId = null;
+    $('#sheet-body').replaceChildren();
+    if (lastFocus && lastFocus.focus) { try { lastFocus.focus(); } catch (e) {} }
+  }
+  $('#sheet-close').addEventListener('click', closeSheet);
+  $('#scrim').addEventListener('click', closeSheet);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('#overlay').hidden) closeSheet(); });
+
+  /* ---------- arranque ---------- */
+  async function boot() {
+    renderAll();
+    var b = null;
+    try {
+      if (window.claude && window.claude.use) {
+        var db = await window.claude.use('db');
+        if (db) b = dbBackend(db);
+        try { dl = await window.claude.use('downloads'); } catch (e) { dl = null; }
+      }
+    } catch (e) { b = null; }
+    if (!b) {
+      dl = makeDownloader();
+      if (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && window.firebase) { startCloud(); return; }
+      b = localBackend(); $('#note').hidden = false;
+    }
+    begin(b);
+  }
+  function begin(b) {
+    backend = b;
+    $('#pdf-row').hidden = !dl;
+    backend.subscribeCols(function (l) { columns = (Array.isArray(l) ? l : []).filter(function (c) { return c && typeof c.id === 'string' && typeof c.name === 'string'; }); renderAll(); });
+    backend.subscribe(onData, function () { ready = true; $('#summary').textContent = 'No se pudo leer el inventario. Recarga la página.'; });
+  }
+  /* ---------- versión independiente: descargas, copias e importación ---------- */
+  function makeDownloader() {
+    var cap = window.Capacitor;
+    var native = !!(cap && cap.isNativePlatform && cap.isNativePlatform());
+    var mime = function (n) { return /\.pdf$/i.test(n) ? 'application/pdf' : /\.json$/i.test(n) ? 'application/json' : 'text/csv;charset=utf-8'; };
+    function toB64(blob) {
+      return new Promise(function (ok, no) {
+        var r = new FileReader();
+        r.onload = function () { ok(String(r.result).split(',')[1]); };
+        r.onerror = no; r.readAsDataURL(blob);
+      });
+    }
+    return {
+      save: async function (o) {
+        var blob = o.data instanceof Blob ? o.data : new Blob([o.data], { type: mime(o.filename) });
+        if (native && cap.Plugins && cap.Plugins.Filesystem && cap.Plugins.Share) {
+          try {
+            var w = await cap.Plugins.Filesystem.writeFile({ path: o.filename, data: await toB64(blob), directory: 'CACHE' });
+            await cap.Plugins.Share.share({ title: o.filename, url: w.uri, dialogTitle: 'Guardar o enviar' });
+            return { status: 'saved' };
+          } catch (e) {
+            var err = new Error(e && e.message || 'error');
+            err.code = /cancel/i.test(err.message) ? 'declined' : 'unavailable';
+            throw err;
+          }
+        }
+        var url = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = url; a.download = o.filename; document.body.append(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+        return { status: 'saved' };
+      }
+    };
+  }
+  function stamp() { var d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  async function saveFile(name, data) {
+    if (!dl) dl = makeDownloader();
+    try { await dl.save({ filename: name, data: data }); toast('Archivo listo: ' + name); }
+    catch (e) { toast(e && e.code === 'declined' ? 'No se guardó el archivo.' : 'No se pudo guardar el archivo.'); }
+  }
+  $('#bk-json').addEventListener('click', function () {
+    var data = { app: 'control-stock', version: 1, columns: columns, products: products.map(function (p) { return Object.assign({ id: p.id }, p.raw); }) };
+    saveFile('copia-inventario-' + stamp() + '.json', JSON.stringify(data));
+  });
+  $('#bk-csv').addEventListener('click', function () {
+    var esc = function (v) { v = String(v == null ? '' : v); return /[";\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    var rows = [['Producto', 'Cantidad', 'Mínimo', 'Precio cliente', 'Precio costo', 'Ubicación'].concat(columns.map(function (c) { return c.name; }))];
+    products.slice().sort(function (a, b) { return (a.created - b.created) || a.name.localeCompare(b.name, 'es', { numeric: true }); }).forEach(function (p) {
+      rows.push([p.name, p.qty, p.min, p.price, p.cost, p.location].concat(columns.map(function (c) { return p.extra[c.id] == null ? '' : p.extra[c.id]; })));
+    });
+    saveFile('inventario-' + stamp() + '.csv', '﻿' + rows.map(function (r) { return r.map(esc).join(';'); }).join('\r\n'));
+  });
+  $('#bk-import').addEventListener('click', function () { $('#bk-file').click(); });
+  $('#bk-file').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0]; e.target.value = '';
+    if (f) importFile(f);
+  });
+  function parseCsv(text) {
+    text = String(text).replace(/^﻿/, '');
+    var first = text.split(/\r?\n/)[0] || '';
+    var delim = [';', '\t', ','].map(function (d) { return [d, first.split(d).length]; }).sort(function (a, b) { return b[1] - a[1]; })[0][0];
+    var rows = [], row = [], cur = '', q = false;
+    for (var i = 0; i < text.length; i++) {
+      var ch = text[i];
+      if (q) { if (ch === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += ch; }
+      else if (ch === '"') q = true;
+      else if (ch === delim) { row.push(cur); cur = ''; }
+      else if (ch === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+      else if (ch !== '\r') cur += ch;
+    }
+    if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+    return rows.filter(function (r) { return r.some(function (c) { return String(c).trim() !== ''; }); });
+  }
+  async function importFile(file) {
+    var n = 0;
+    try {
+      var text = await file.text();
+      if (/\.json$/i.test(file.name)) {
+        var j = JSON.parse(text), have = {}, merged = columns.slice();
+        merged.forEach(function (c) { have[c.id] = 1; });
+        if (j && Array.isArray(j.columns)) {
+          j.columns.forEach(function (c) { if (c && typeof c.id === 'string' && typeof c.name === 'string' && !have[c.id]) merged.push({ id: c.id, name: c.name }); });
+          await backend.saveCols(merged.slice(0, 12));
+        }
+        var list = j && Array.isArray(j.products) ? j.products : [];
+        for (var i = 0; i < list.length; i++) {
+          var it = list[i];
+          if (!it || typeof it !== 'object' || typeof it.id !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(it.id)) continue;
+          var d = Object.assign({}, it); delete d.id;
+          await backend.save(it.id, d); n++;
+        }
+      } else {
+        var rows = parseCsv(text);
+        if (rows.length < 2) throw new Error('vacío');
+        var head = rows[0].map(function (x) { return norm(x); }), map = {}, extras = [];
+        head.forEach(function (hd, idx) {
+          if (!hd) return;
+          if (map.name == null && /producto|pantalla|nombre|articulo|item|descripcion/.test(hd)) map.name = idx;
+          else if (map.qty == null && /^cant/.test(hd)) map.qty = idx;
+          else if (map.min == null && /^min/.test(hd)) map.min = idx;
+          else if (map.cost == null && /costo/.test(hd)) map.cost = idx;
+          else if (map.price == null && /precio|valor/.test(hd)) map.price = idx;
+          else if (map.location == null && /ubic/.test(hd)) map.location = idx;
+          else extras.push({ idx: idx, name: String(rows[0][idx]).trim() });
+        });
+        if (map.name == null) { map.name = 0; extras = extras.filter(function (x) { return x.idx !== 0; }); }
+        var cols = columns.slice();
+        extras.forEach(function (x, k) {
+          var found = cols.filter(function (c) { return norm(c.name) === norm(x.name); })[0];
+          if (found) x.id = found.id;
+          else if (cols.length < 12) { x.id = 'c' + Date.now().toString(36) + k; cols.push({ id: x.id, name: x.name.slice(0, 30) }); }
+        });
+        if (cols.length !== columns.length) await backend.saveCols(cols);
+        var cell = function (r, k) { return map[k] == null ? '' : String(r[map[k]] == null ? '' : r[map[k]]).trim(); };
+        for (var r = 1; r < rows.length; r++) {
+          var row = rows[r], name = cell(row, 'name');
+          if (!name) continue;
+          var ex = {};
+          extras.forEach(function (x) { if (x.id && row[x.idx] != null && String(row[x.idx]).trim()) ex[x.id] = String(row[x.idx]).trim(); });
+          await backend.save('p' + Date.now().toString(36) + r.toString(36) + Math.random().toString(36).slice(2, 5),
+            { name: name, qty: toInt(cell(row, 'qty')), min: toInt(cell(row, 'min')), price: toInt(cell(row, 'price')), cost: toInt(cell(row, 'cost')), location: cell(row, 'location'), hist: [], extra: ex, created: Date.now() + r, updated: Date.now() });
+          n++;
+        }
+      }
+      toast('Se importaron ' + n + ' productos.');
+    } catch (e) { toast(n ? 'Importación incompleta: ' + n + ' productos.' : 'No se pudo importar el archivo.'); }
+  }
+  if ('serviceWorker' in navigator && !window.Capacitor && /^https?:/.test(location.protocol)) { navigator.serviceWorker.register('sw.js').catch(function () {}); }
+
+  /* ---------- sincronización con Firebase ---------- */
+  function cloudBackend(fs, uid) {
+    var base = 'users/' + uid;
+    var col = fs.collection(base + '/products'), meta = fs.doc(base + '/meta/columns');
+    return {
+      kind: 'cloud',
+      subscribe: function (f, onErr) {
+        col.onSnapshot(function (snap) { var m = {}; snap.forEach(function (d) { m[d.id] = d.data(); }); f(m); }, function (e) { if (onErr) onErr(e); });
+      },
+      save: function (id, o) { return col.doc(id).set(o); },
+      remove: function (id) { return col.doc(id).delete(); },
+      subscribeCols: function (f) {
+        meta.onSnapshot(function (d) { var v = d.exists ? d.data() : null; f(v && Array.isArray(v.list) ? v.list : []); }, function () {});
+      },
+      saveCols: function (l) { return meta.set({ list: l }); }
+    };
+  }
+  function startCloud() {
+    try { firebase.initializeApp(window.FIREBASE_CONFIG); } catch (e) {}
+    var auth = firebase.auth(), fs = firebase.firestore(), started = false;
+    try { fs.enablePersistence({ synchronizeTabs: true }).catch(function () {}); } catch (e) {}
+    $('#bk-out').hidden = false;
+    $('#bk-out').addEventListener('click', function () { auth.signOut().then(function () { location.reload(); }); });
+    auth.onAuthStateChanged(function (user) {
+      if (!user) { showLogin(auth); return; }
+      $('#login').hidden = true;
+      if (started) return;
+      started = true;
+      begin(cloudBackend(fs, user.uid));
+    });
+  }
+  var loginBound = false;
+  function showLogin(auth) {
+    $('#login').hidden = false;
+    if (loginBound) return;
+    loginBound = true;
+    var err = $('#lg-err'), mail = $('#lg-mail'), pass = $('#lg-pass');
+    var say = function (t) { err.hidden = !t; err.textContent = t || ''; };
+    var why = function (e) {
+      var c = (e && e.code) || '';
+      return /invalid-email/.test(c) ? 'El correo no es válido.' :
+        /user-not-found|wrong-password|invalid-credential|invalid-login/.test(c) ? 'Correo o contraseña incorrectos.' :
+        /email-already/.test(c) ? 'Ese correo ya tiene cuenta. Toca Entrar.' :
+        /weak-password/.test(c) ? 'La contraseña debe tener al menos 6 caracteres.' :
+        /network/.test(c) ? 'Sin conexión. Revisa tu internet.' :
+        /too-many/.test(c) ? 'Demasiados intentos. Espera un momento.' :
+        /operation-not-allowed|admin-restricted/.test(c) ? 'Crear cuentas está desactivado en este proyecto.' :
+        'No se pudo entrar. Inténtalo de nuevo.';
+    };
+    async function run(fn) {
+      say('');
+      if (!mail.value.trim() || !pass.value) { say('Escribe tu correo y tu contraseña.'); return; }
+      try { await fn(); } catch (e) { say(why(e)); }
+    }
+    $('#login-form').addEventListener('submit', function (e) { e.preventDefault(); run(function () { return auth.signInWithEmailAndPassword(mail.value.trim(), pass.value); }); });
+    $('#lg-new').addEventListener('click', function () { run(function () { return auth.createUserWithEmailAndPassword(mail.value.trim(), pass.value); }); });
+    $('#lg-reset').addEventListener('click', async function () {
+      say('');
+      if (!mail.value.trim()) { say('Escribe tu correo y toca de nuevo.'); return; }
+      try { await auth.sendPasswordResetEmail(mail.value.trim()); toast('Te enviamos un correo para cambiar la contraseña.'); }
+      catch (e) { say(why(e)); }
+    });
+  }
+
+  boot();
+})();
+</script>
+</body></html>
