@@ -1,14 +1,8 @@
-// Pega aquí la configuración de tu proyecto de Firebase (mira LEEME-NUBE.md).
-// Mientras esté en null, la app guarda los datos solo en este dispositivo.
-window.FIREBASE_CONFIG = null;
-
-/* Ejemplo de cómo debe quedar:
 window.FIREBASE_CONFIG = {
-  apiKey: "AIza...",
-  authDomain: "mi-proyecto.firebaseapp.com",
-  projectId: "mi-proyecto",
-  storageBucket: "mi-proyecto.firebasestorage.app",
-  messagingSenderId: "1234567890",
-  appId: "1:1234567890:web:abcdef"
+  apiKey: "AIzaSyAQO-10RMBrdXoxkSQFSE-R8t2N-e-5N7U",
+  authDomain: "control-stock-4ef0f.firebaseapp.com",
+  projectId: "control-stock-4ef0f",
+  storageBucket: "control-stock-4ef0f.firebasestorage.app",
+  messagingSenderId: "450985195307",
+  appId: "1:450985195307:web:80886acff785d9d6c3776e"
 };
-*/
